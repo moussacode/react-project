@@ -9,21 +9,31 @@ import ClientShop from './page/ClientShop';
 import LoginPage from './page/LoginPage';
 import RegisterPage from './page/RegisterPage';
 import LandingPage from './page/LandingPage';
+import { AuthProvider } from './context/AuthContext';
+import ProtectedRoute from './context/ProtectedRoute';
 
 
 
 function App () {
   return (
     <Router>
+    <AuthProvider>
       <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
-        <Route path="/admin" element={<AdminDashboard />} />
-        <Route path="/vendeur" element={<SellerSpace />} />
-        <Route path="/boutique" element={<ClientShop />} />
+        <Route path="/" element={<LandingPage />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+          <Route path="/admin" element={<AdminDashboard />} />
+        </Route>
+        <Route element={<ProtectedRoute allowedRoles={["vendeur"]} />}>
+          <Route path="/vendeur" element={<SellerSpace />} />
+        </Route>
+        <Route element={<ProtectedRoute allowedRoles={["client"]} />}>
+          <Route path="/boutique" element={<ClientShop />} />
+        </Route>
       </Routes>
-    </Router>
+    </AuthProvider>
+  </Router>
   );
 }
 export default App;

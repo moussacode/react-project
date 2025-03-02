@@ -1,226 +1,340 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from '../utils/axiosConfig';
+import { toast } from 'react-toastify';
+import { useAuth } from '../context/AuthContext';
 
 const AdminDashboard = () => {
-  // Données fictives
-  const [users, setUsers] = useState([
-    { id: 1, fullName: 'Admin Principal', username: 'admin', role: 'admin' },
-    { id: 2, fullName: 'Éleveur 1', username: 'seller1', role: 'vendeur' },
-    { id: 3, fullName: 'Client 1', username: 'client1', role: 'client' }
-  ]);
-
-  const [animals, setAnimals] = useState([
-    { id: 1, name: 'Mouton 001', type: 'mouton', age: 2, price: 200, stock: 5 },
-    { id: 2, name: 'Vache 001', type: 'vache', age: 4, price: 1500, stock: 3 }
-  ]);
-
-  // États pour la gestion des modales
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+ 
+  const { user, logout } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [animals, setAnimals] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
   const [currentSection, setCurrentSection] = useState('users');
+  const [loading, setLoading] = useState(true);
 
-  // Suppression d'élément
-  const handleDelete = (id, type) => {
-    if (type === 'user') {
-      setUsers(users.filter(user => user.id !== id));
-    } else {
-      setAnimals(animals.filter(animal => animal.id !== id));
+  // Configuration des colonnes
+  const tableConfig = {
+    users: ['Nom complet', 'Email', 'Rôle', 'Actions'],
+    animals: ['Nom', 'Type', 'Prix', 'Stock', 'Actions']
+  };
+
+  // Fetch data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const endpoints = {
+          users: '/admin/users',
+  animals: '/admin/animals'
+        };
+        
+        const { data } = await axios.get(endpoints[currentSection]);
+        currentSection === 'users' ? setUsers(data) : setAnimals(data);
+      } catch {
+        toast.error('Erreur de chargement des données');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (user?.role === 'admin') {
+      fetchData();
+    }
+  }, [currentSection, user]);
+
+  // Gestion des suppressions
+  const handleDelete = async (id) => {
+    try {
+      const endpoints = {
+        users: `/admin/users/${id}`,
+        animals: `/admin/animals/${id}`
+      };
+
+      await axios.delete(endpoints[currentSection]);
+      toast.success('Suppression réussie');
+      refreshData();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Erreur de suppression');
     }
   };
 
+  // Soumission du formulaire
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    const formData = new FormData(e.target);
+    const data = Object.fromEntries(formData);
+
+    try {
+      const isEdit = !!selectedItem;
+      const endpoints = {
+        users: isEdit ? `/admin/users/${selectedItem._id}` : '/admin/users',
+        animals: isEdit ? `/admin/animals/${selectedItem._id}` : '/admin/animals'
+      };
+
+      isEdit
+        ? await axios.put(endpoints[currentSection], data)
+        : await axios.post(endpoints[currentSection], data);
+
+      toast.success(`Opération réussie !`);
+      refreshData();
+      closeModal();
+    } catch (error) {
+      toast.error(error.response?.data?.message || 'Erreur de traitement');
+    }
+  };
+
+  // Rafraîchir les données
+  const refreshData = async () => {
+    const { data } = await axios.get(currentSection === 'users' ? '/admin/users' : '/admin/animals/admin');
+    currentSection === 'users' ? setUsers(data) : setAnimals(data);
+  };
+
+  // Fermer la modale
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setSelectedItem(null);
+  };
+
+  if (user?.role !== 'admin') {
+    return <div className="p-8 text-red-600">Accès non autorisé</div>;
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 p-8">
+      <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-2xl font-bold">Bienvenue {user?.fullName}</h1>
+            <p className="text-gray-600">Espace Admin</p>
+          </div>
+          <button 
+            onClick={logout}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            Déconnexion
+          </button>
+        </div>
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Tableau de bord Administrateur</h1>
 
       {/* Navigation */}
-      <div className="flex gap-4 mb-8">
-        <button
-          onClick={() => setCurrentSection('users')}
-          className={`px-4 py-2 rounded-lg ${currentSection === 'users' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
-        >
-          Gestion des Utilisateurs
-        </button>
-        <button
-          onClick={() => setCurrentSection('animals')}
-          className={`px-4 py-2 rounded-lg ${currentSection === 'animals' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700'}`}
-        >
-          Gestion du Bétail
-        </button>
+      <div className="flex gap-2 mb-8">
+        {Object.keys(tableConfig).map((section) => (
+          <button
+            key={section}
+            onClick={() => setCurrentSection(section)}
+            className={`px-4 py-2 rounded-lg capitalize ${
+              currentSection === section
+                ? 'bg-blue-600 text-white'
+                : 'bg-white text-gray-700 shadow-sm'
+            }`}
+          >
+            {section}
+          </button>
+        ))}
       </div>
 
-      {/* Section Utilisateurs */}
-      {currentSection === 'users' && (
+      {/* Tableau */}
+      {loading ? (
+        <div className="text-center">Chargement...</div>
+      ) : (
         <div className="bg-white rounded-xl shadow-sm p-6">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold">Utilisateurs</h2>
+            <h2 className="text-xl font-semibold capitalize">{currentSection}</h2>
             <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
+              onClick={() => setIsModalOpen(true)}
+              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700"
             >
-              Ajouter un utilisateur
+              Ajouter
             </button>
           </div>
 
-          <table className="w-full">
-            <thead>
-              <tr className="text-left border-b">
-                <th className="pb-3">Nom complet</th>
-                <th className="pb-3">Nom d'utilisateur</th>
-                <th className="pb-3">Rôle</th>
-                <th className="pb-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(user => (
-                <tr key={user.id} className="border-b last:border-b-0">
-                  <td className="py-4">{user.fullName}</td>
-                  <td>{user.username}</td>
-                  <td>
-                    <span className={`px-2 py-1 rounded-full text-sm ${
-                      user.role === 'admin' ? 'bg-red-100 text-red-800' :
-                      user.role === 'vendeur' ? 'bg-blue-100 text-blue-800' :
-                      'bg-gray-100 text-gray-800'
-                    }`}>
-                      {user.role}
-                    </span>
-                  </td>
-                  <td>
-                    <button
-                      onClick={() => handleDelete(user.id, 'user')}
-                      className="text-red-600 hover:text-red-800 mr-4"
-                    >
-                      Supprimer
-                    </button>
-                    <button
-                      onClick={() => setSelectedItem(user)}
-                      className="text-blue-600 hover:text-blue-800"
-                    >
-                      Modifier
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead>
+                <tr className="text-left border-b">
+                  {tableConfig[currentSection].map((header) => (
+                    <th key={header} className="pb-3 px-4">
+                      {header}
+                    </th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Section Animaux */}
-      {currentSection === 'animals' && (
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-semibold">Bétail</h2>
-            <button
-              onClick={() => setIsAddModalOpen(true)}
-              className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-            >
-              Ajouter un animal
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {animals.map(animal => (
-              <div key={animal.id} className="border rounded-lg p-4">
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="font-semibold">{animal.name}</h3>
-                  <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-sm">
-                    {animal.type}
-                  </span>
-                </div>
-                <div className="space-y-1 text-sm">
-                  <p>Âge: {animal.age} ans</p>
-                  <p>Prix: {animal.price}€</p>
-                  <p>Stock: {animal.stock}</p>
-                </div>
-                <div className="mt-4 flex gap-2">
-                  <button
-                    onClick={() => handleDelete(animal.id, 'animal')}
-                    className="text-red-600 hover:text-red-800 text-sm"
-                  >
-                    Supprimer
-                  </button>
-                  <button
-                    onClick={() => setSelectedItem(animal)}
-                    className="text-blue-600 hover:text-blue-800 text-sm"
-                  >
-                    Modifier
-                  </button>
-                </div>
-              </div>
-            ))}
+              </thead>
+              <tbody>
+                {(currentSection === 'users' ? users : animals).map((item) => (
+                  <tr key={item._id} className="border-b">
+                    {currentSection === 'users' ? (
+                      <>
+                        <td className="py-4 px-4">{item.fullName}</td>
+                        <td>{item.username}</td>
+                        <td>
+                          <span className={`px-2 py-1 rounded-full text-sm ${
+                            item.role === 'admin' ? 'bg-red-100 text-red-800' :
+                            item.role === 'vendeur' ? 'bg-blue-100 text-blue-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {item.role}
+                          </span>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-4 px-4">{item.name}</td>
+                        <td>{item.type}</td>
+                        <td>{item.price}€</td>
+                        <td>{item.stock}</td>
+                      </>
+                    )}
+                    <td className="py-4 px-4">
+                      <div className="flex gap-4">
+                        <button
+                          onClick={() => handleDelete(item._id)}
+                          className="text-red-600 hover:text-red-800"
+                        >
+                          Supprimer
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelectedItem(item);
+                            setIsModalOpen(true);
+                          }}
+                          className="text-blue-600 hover:text-blue-800"
+                        >
+                          Modifier
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
 
       {/* Modale */}
-      {(isAddModalOpen || selectedItem) && (
+      {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-semibold mb-4">
-              {selectedItem ? 'Modifier' : 'Ajouter'} {currentSection === 'users' ? 'un utilisateur' : 'un animal'}
+              {selectedItem ? 'Modifier' : 'Ajouter'} {currentSection.slice(0, -1)}
             </h3>
 
-            <form className="space-y-4">
+            <form onSubmit={handleSubmit}>
               {currentSection === 'users' ? (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Nom complet</label>
-                    <input
-                      type="text"
-                      defaultValue={selectedItem?.fullName}
-                      className="w-full px-4 py-2 border rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Rôle</label>
-                    <select
-                      defaultValue={selectedItem?.role}
-                      className="w-full px-4 py-2 border rounded-lg"
-                    >
-                      <option value="admin">Administrateur</option>
-                      <option value="vendeur">Vendeur</option>
-                      <option value="client">Client</option>
-                    </select>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block mb-2">Nom complet</label>
+                      <input
+                        name="fullName"
+                        defaultValue={selectedItem?.fullName}
+                        className="w-full p-2 border rounded"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2">Email</label>
+                      <input
+                        name="username"
+                        
+                        defaultValue={selectedItem?.username}
+                        className="w-full p-2 border rounded"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2">Rôle</label>
+                      <select
+                        name="role"
+                        defaultValue={selectedItem?.role || 'client'}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="vendeur">Vendeur</option>
+                        <option value="client">Client</option>
+                      </select>
+                    </div>
+                    {!selectedItem && (
+        <div>
+          <label className="block mb-2">Mot de passe</label>
+          <input
+            name="password"
+            type="password"
+            className="w-full p-2 border rounded"
+            required={!selectedItem} // Obligatoire seulement pour la création
+          />
+        </div>
+      )}
                   </div>
                 </>
               ) : (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Nom</label>
-                    <input
-                      type="text"
-                      defaultValue={selectedItem?.name}
-                      className="w-full px-4 py-2 border rounded-lg"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Type</label>
-                    <select
-                      defaultValue={selectedItem?.type}
-                      className="w-full px-4 py-2 border rounded-lg"
-                    >
-                      <option value="mouton">Mouton</option>
-                      <option value="vache">Vache</option>
-                    </select>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block mb-2">Nom</label>
+                      <input
+                        name="name"
+                        defaultValue={selectedItem?.name}
+                        className="w-full p-2 border rounded"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block mb-2">Type</label>
+                      <select
+                        name="type"
+                        defaultValue={selectedItem?.type}
+                        className="w-full p-2 border rounded"
+                      >
+                        <option value="mouton">Mouton</option>
+                        <option value="vache">Vache</option>
+                        <option value="chèvre">Chèvre</option>
+                      </select>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block mb-2">Prix</label>
+                        <input
+                          name="price"
+                          type="number"
+                          defaultValue={selectedItem?.price}
+                          className="w-full p-2 border rounded"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="block mb-2">Stock</label>
+                        <input
+                          name="stock"
+                          type="number"
+                          defaultValue={selectedItem?.stock}
+                          className="w-full p-2 border rounded"
+                          required
+                        />
+                        <input 
+    type="hidden" 
+    name="seller" 
+    value={user._id} // L'admin devient le vendeur par défaut
+  />
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
 
-              <div className="flex justify-end gap-2">
+              <div className="mt-6 flex justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsAddModalOpen(false);
-                    setSelectedItem(null);
-                  }}
-                  className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                  onClick={closeModal}
+                  className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
                 >
                   Annuler
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
                 >
-                  {selectedItem ? 'Enregistrer' : 'Ajouter'}
+                  {selectedItem ? 'Enregistrer' : 'Créer'}
                 </button>
               </div>
             </form>
